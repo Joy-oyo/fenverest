@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EventSwipe - Discover Events & Make Friends</title>
+    <link rel="stylesheet" href="css/styles.css">
+    <link rel="stylesheet" href="css/auth.css">
+</head>
+<body>
+    <!-- Auth Overlay -->
+    <div class="auth-overlay" id="authOverlay">
+        <div class="auth-container">
+            <!-- Login Form -->
+            <div class="auth-form" id="loginForm">
+                <h2>Welcome</h2>
+                <form id="loginFormElement">
+                    <div class="form-group">
+                        <input type="email" id="loginEmail" placeholder="Email" required>
+                    </div>
+                    <div class="form-group">
+                        <input type="password" id="loginPassword" placeholder="Password" required>
+                    </div>
+                    <button type="submit" class="btn-primary">Login</button>
+                </form>
+                <p class="auth-switch">Don't have an account? <a href="#" id="showRegister">Register</a></p>
+            </div>
+
+            <!-- Register Form -->
+            <div class="auth-form hidden" id="registerForm">
+                <h2>Create Account</h2>
+                <form id="registerFormElement">
+                    <div class="form-group">
+                        <input type="text" id="registerName" placeholder="Full Name" required>
+                    </div>
+                    <div class="form-group">
+                        <input type="email" id="registerEmail" placeholder="Email" required>
+                    </div>
+                    <div class="form-group">
+                        <input type="tel" id="registerPhone" placeholder="Phone Number" required>
+                    </div>
+                    <div class="form-group">
+                        <input type="password" id="registerPassword" placeholder="Password" required>
+                    </div>
+                    <button type="submit" class="btn-primary">Register</button>
+                </form>
+                <p class="auth-switch">Already have an account? <a href="#" id="showLogin">Login</a></p>
+            </div>
+
+            <!-- Phone Verification Form -->
+            <div class="auth-form hidden" id="verifyPhoneForm">
+                <h2>Verify Phone Number</h2>
+                <form id="verifyPhoneFormElement">
+                    <div class="form-group">
+                        <input type="text" id="verificationCode" placeholder="Enter verification code" required>
+                    </div>
+                    <button type="submit" class="btn-primary">Verify</button>
+                </form>
+                <p class="auth-switch">Didn't receive the code? <a href="#" id="resendCode">Resend</a></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main App Container -->
+    <div class="app-container" id="appContainer">
+        <div class="header">
+            <div class="logo">EventSwipe</div>
+            <div class="tagline">Discover events, make friends</div>
+            <div class="user-menu">
+                <button id="profileBtn" class="btn-icon">👤</button>
+                <button id="settingsBtn" class="btn-icon">⚙️</button>
+                <button id="logoutBtn" class="btn-icon">🚪</button>
+            </div>
+        </div>
+
+        <div class="match-counter">
+            <span id="matchCount">0</span> interested
+        </div>
+
+        <div class="card-stack" id="cardStack">
+            <!-- Cards will be dynamically generated -->
+        </div>
+
+        <div class="action-buttons">
+            <button class="action-btn pass-btn" id="passBtn">✕</button>
+            <button class="action-btn like-btn" id="likeBtn">♥</button>
+        </div>
+    </div>
+
+    <!-- Profile Modal -->
+    <div class="modal" id="profileModal">
+        <div class="modal-content">
+            <h2>Profile</h2>
+            <div class="profile-info">
+                <div class="profile-header">
+                    <div class="profile-avatar" id="profileAvatar">👤</div>
+                    <h3 id="profileName">User Name</h3>
+                </div>
+                <div class="profile-details">
+                    <p><strong>Email:</strong> <span id="profileEmail"></span></p>
+                    <p><strong>Phone:</strong> <span id="profilePhone"></span></p>
+                    <p><strong>Role:</strong> <span id="profileRole"></span></p>
+                    <div class="role-switch">
+                        <label>Switch Role:</label>
+                        <select id="roleSwitch">
+                            <option value="participant">Participant</option>
+                            <option value="organizer">Organizer</option>
+                        </select>
+                        <button id="updateRoleBtn" class="btn-secondary">Update Role</button>
+                    </div>
+                </div>
+                <div class="profile-stats">
+                    <div class="stat">
+                        <span class="stat-value" id="createdEventsCount">0</span>
+                        <span class="stat-label">Created Events</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-value" id="joinedEventsCount">0</span>
+                        <span class="stat-label">Joined Events</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div class="modal" id="settingsModal">
+        <div class="modal-content">
+            <h2>Settings</h2>
+            <form id="settingsForm">
+                <div class="settings-section">
+                    <h3>Preferences</h3>
+                    <div class="form-group">
+                        <label>Interests</label>
+                        <input type="text" id="interests" placeholder="Add interests (comma-separated)">
+                    </div>
+                    <div class="form-group">
+                        <label>Preferred Difficulty Levels</label>
+                        <div class="checkbox-group">
+                            <label><input type="checkbox" name="difficulty" value="beginner"> Beginner</label>
+                            <label><input type="checkbox" name="difficulty" value="intermediate"> Intermediate</label>
+                            <label><input type="checkbox" name="difficulty" value="advanced"> Advanced</label>
+                        </div>
+                    </div>
+                </div>
+                <div class="settings-section">
+                    <h3>Notifications</h3>
+                    <div class="checkbox-group">
+                        <label><input type="checkbox" id="emailNotif"> Email Notifications</label>
+                        <label><input type="checkbox" id="pushNotif"> Push Notifications</label>
+                        <label><input type="checkbox" id="eventReminders"> Event Reminders</label>
+                        <label><input type="checkbox" id="newMatches"> New Matches</label>
+                    </div>
+                </div>
+                <button type="submit" class="btn-primary">Save Settings</button>
+            </form>
+        </div>
+    </div>
+
+    <script src="js/config.js"></script>
+    <script src="js/auth.js"></script>
+    <script src="js/app.js"></script>
+    <script src="js/profile.js"></script>
+    <script src="js/settings.js"></script>
+</body>
+</html> 
