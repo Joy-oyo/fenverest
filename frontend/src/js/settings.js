@@ -1,31 +1,47 @@
+const SETTINGS_API_BASE = (window.config && window.config.API_URL) || '';
+
 class Settings {
     constructor() {
-        this.settingsModal = document.getElementById('settingsModal');
-        this.settingsForm = document.getElementById('settingsForm');
-        this.settingsButton = document.querySelector('.settings-button');
-        this.closeSettingsButton = document.querySelector('.close-settings');
-        
-        this.initializeEventListeners();
+        this.modal = document.getElementById('settingsModal');
+        this.openButton = document.getElementById('settingsBtn');
+        this.closeButton = this.modal ? this.modal.querySelector('[data-modal-close]') : null;
+        this.form = document.getElementById('settingsForm');
+        this.toastContainer = document.getElementById('toastContainer');
+
+        if (!this.modal || !this.form || !this.openButton) {
+            return;
+        }
+
+        this.bindEvents();
     }
 
-    initializeEventListeners() {
-        this.settingsButton.addEventListener('click', () => this.openSettings());
-        this.closeSettingsButton.addEventListener('click', () => this.closeSettings());
-        this.settingsForm.addEventListener('submit', (e) => this.handleSettingsUpdate(e));
+    bindEvents() {
+        this.openButton.addEventListener('click', () => this.open());
+        if (this.closeButton) {
+            this.closeButton.addEventListener('click', () => this.close());
+        }
+        this.modal.addEventListener('click', (event) => {
+            if (event.target === this.modal) {
+                this.close();
+            }
+        });
+        this.form.addEventListener('submit', (e) => this.handleSubmit(e));
     }
 
-    openSettings() {
+    open() {
+        this.modal.classList.add('active');
+        this.modal.setAttribute('aria-hidden', 'false');
         this.loadSettings();
-        this.settingsModal.style.display = 'block';
     }
 
-    closeSettings() {
-        this.settingsModal.style.display = 'none';
+    close() {
+        this.modal.classList.remove('active');
+        this.modal.setAttribute('aria-hidden', 'true');
     }
 
     async loadSettings() {
         try {
-            const response = await fetch('/api/users/preferences', {
+            const response = await fetch(`${SETTINGS_API_BASE}${config.ENDPOINTS.USERS.PREFERENCES}`, {
                 headers: {
                     'Authorization': `Bearer ${localStorage.getItem('token')}`
                 }
@@ -36,110 +52,98 @@ class Settings {
             }
 
             const preferences = await response.json();
-            this.populateSettingsForm(preferences);
-
+            this.populateForm(preferences);
         } catch (error) {
-            console.error('Error loading settings:', error);
-            this.showError('Failed to load settings. Please try again.');
+            console.error('Error loading settings', error);
+            this.showToast('Unable to load settings right now.', 'error');
         }
     }
 
-    populateSettingsForm(preferences) {
-        const form = this.settingsForm;
-        
-        // Set interests
-        const interests = form.querySelectorAll('input[name="interests"]');
-        interests.forEach(checkbox => {
-            checkbox.checked = preferences.interests.includes(checkbox.value);
+    populateForm(preferences = {}) {
+        const interestsInput = document.getElementById('interests');
+        if (interestsInput) {
+            interestsInput.value = (preferences.interests || []).join(', ');
+        }
+
+        const difficultyChecks = this.form.querySelectorAll('input[name="difficulty"]');
+        const preferred = new Set(preferences.preferredDifficulties || []);
+        difficultyChecks.forEach((checkbox) => {
+            checkbox.checked = preferred.has(checkbox.value);
         });
 
-        // Set difficulty preferences
-        const difficulties = form.querySelectorAll('input[name="difficulty"]');
-        difficulties.forEach(checkbox => {
-            checkbox.checked = preferences.preferredDifficulties.includes(checkbox.value);
+        const notificationPrefs = preferences.notifications || {};
+        const notificationMap = {
+            emailNotif: 'email',
+            pushNotif: 'push',
+            eventReminders: 'eventReminders',
+            newMatches: 'newMatches'
+        };
+        Object.entries(notificationMap).forEach(([id, key]) => {
+            const input = document.getElementById(id);
+            if (input) {
+                input.checked = Boolean(notificationPrefs[key]);
+            }
         });
-
-        // Set location preferences
-        form.querySelector('input[name="maxDistance"]').value = preferences.maxDistance || 50;
-        form.querySelector('input[name="location"]').value = preferences.location || '';
-
-        // Set notification preferences
-        form.querySelector('input[name="emailNotifications"]').checked = preferences.notifications.email;
-        form.querySelector('input[name="pushNotifications"]').checked = preferences.notifications.push;
-        form.querySelector('input[name="eventReminders"]').checked = preferences.notifications.eventReminders;
-
-        // Set privacy settings
-        form.querySelector('input[name="profileVisibility"]').checked = preferences.privacy.profileVisibility;
-        form.querySelector('input[name="showLocation"]').checked = preferences.privacy.showLocation;
     }
 
-    async handleSettingsUpdate(e) {
+    async handleSubmit(e) {
         e.preventDefault();
-        const formData = new FormData(this.settingsForm);
-        
-        const settingsData = {
-            interests: Array.from(formData.getAll('interests')),
-            preferredDifficulties: Array.from(formData.getAll('difficulty')),
-            maxDistance: parseInt(formData.get('maxDistance')),
-            location: formData.get('location'),
+        const interestsInput = document.getElementById('interests');
+        const interests = interestsInput
+            ? interestsInput.value.split(',').map(item => item.trim()).filter(Boolean)
+            : [];
+        const preferredDifficulties = Array.from(this.form.querySelectorAll('input[name="difficulty"]:checked'))
+            .map(input => input.value);
+
+        const settingsPayload = {
+            interests,
+            preferredDifficulties,
             notifications: {
-                email: formData.get('emailNotifications') === 'on',
-                push: formData.get('pushNotifications') === 'on',
-                eventReminders: formData.get('eventReminders') === 'on'
-            },
-            privacy: {
-                profileVisibility: formData.get('profileVisibility') === 'on',
-                showLocation: formData.get('showLocation') === 'on'
+                email: document.getElementById('emailNotif')?.checked || false,
+                push: document.getElementById('pushNotif')?.checked || false,
+                eventReminders: document.getElementById('eventReminders')?.checked || false,
+                newMatches: document.getElementById('newMatches')?.checked || false
             }
         };
 
         try {
-            const response = await fetch('/api/users/preferences', {
+            const response = await fetch(`${SETTINGS_API_BASE}${config.ENDPOINTS.USERS.PREFERENCES}`, {
                 method: 'PUT',
                 headers: {
                     'Authorization': `Bearer ${localStorage.getItem('token')}`,
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify(settingsData)
+                body: JSON.stringify(settingsPayload)
             });
 
             if (!response.ok) {
                 throw new Error('Failed to update settings');
             }
 
-            this.showSuccess('Settings updated successfully!');
-            this.closeSettings();
-
+            this.showToast('Settings saved!', 'success');
+            this.close();
         } catch (error) {
-            console.error('Error updating settings:', error);
-            this.showError('Failed to update settings. Please try again.');
+            console.error('Error updating settings', error);
+            this.showToast(error.message || 'Unable to save settings.', 'error');
         }
     }
 
-    showSuccess(message) {
-        const notification = document.createElement('div');
-        notification.className = 'success-notification';
-        notification.textContent = message;
-        document.body.appendChild(notification);
+    showToast(message, type = 'info') {
+        const container = this.toastContainer || document.getElementById('toastContainer');
+        if (!container) return;
+
+        const toast = document.createElement('div');
+        toast.className = `toast toast--${type}`;
+        toast.textContent = message;
+        container.appendChild(toast);
 
         setTimeout(() => {
-            notification.remove();
-        }, 3000);
-    }
-
-    showError(message) {
-        const notification = document.createElement('div');
-        notification.className = 'error-notification';
-        notification.textContent = message;
-        document.body.appendChild(notification);
-
-        setTimeout(() => {
-            notification.remove();
+            toast.classList.add('hide');
+            setTimeout(() => toast.remove(), 200);
         }, 3000);
     }
 }
 
-// Initialize settings when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
     window.settings = new Settings();
-}); 
+});

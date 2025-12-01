@@ -1,185 +1,126 @@
+const PROFILE_API_BASE = (window.config && window.config.API_URL) || '';
+
 class Profile {
     constructor() {
-        this.profileModal = document.getElementById('profileModal');
-        this.profileForm = document.getElementById('profileForm');
-        this.profileButton = document.querySelector('.profile-button');
-        this.closeProfileButton = document.querySelector('.close-profile');
-        
-        this.initializeEventListeners();
+        this.modal = document.getElementById('profileModal');
+        this.openButton = document.getElementById('profileBtn');
+        this.closeButton = this.modal ? this.modal.querySelector('[data-modal-close]') : null;
+        this.roleSwitch = document.getElementById('roleSwitch');
+        this.updateRoleButton = document.getElementById('updateRoleBtn');
+        this.toastContainer = document.getElementById('toastContainer');
+
+        if (!this.modal || !this.openButton) {
+            return;
+        }
+
+        this.bindEvents();
+        this.syncFromLocalStorage();
     }
 
-    initializeEventListeners() {
-        this.profileButton.addEventListener('click', () => this.openProfile());
-        this.closeProfileButton.addEventListener('click', () => this.closeProfile());
-        this.profileForm.addEventListener('submit', (e) => this.handleProfileUpdate(e));
-    }
-
-    openProfile() {
-        this.loadProfileData();
-        this.profileModal.style.display = 'block';
-    }
-
-    closeProfile() {
-        this.profileModal.style.display = 'none';
-    }
-
-    async loadProfileData() {
-        try {
-            const response = await fetch('/api/users/profile', {
-                headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('token')}`
-                }
-            });
-
-            if (!response.ok) {
-                throw new Error('Failed to load profile data');
+    bindEvents() {
+        this.openButton.addEventListener('click', () => this.open());
+        if (this.closeButton) {
+            this.closeButton.addEventListener('click', () => this.close());
+        }
+        this.modal.addEventListener('click', (event) => {
+            if (event.target === this.modal) {
+                this.close();
             }
-
-            const userData = await response.json();
-            this.populateProfileForm(userData);
-
-        } catch (error) {
-            console.error('Error loading profile:', error);
-            this.showError('Failed to load profile data. Please try again.');
+        });
+        if (this.updateRoleButton) {
+            this.updateRoleButton.addEventListener('click', (e) => this.handleRoleUpdate(e));
         }
     }
 
-    populateProfileForm(userData) {
-        const form = this.profileForm;
-        form.querySelector('input[name="name"]').value = userData.name || '';
-        form.querySelector('input[name="email"]').value = userData.email || '';
-        form.querySelector('input[name="bio"]').value = userData.bio || '';
-        form.querySelector('input[name="location"]').value = userData.location || '';
-        
-        // Set avatar preview if exists
-        const avatarPreview = form.querySelector('.avatar-preview');
-        if (userData.avatar) {
-            avatarPreview.style.backgroundImage = `url(${userData.avatar})`;
+    open() {
+        this.syncFromLocalStorage();
+        this.modal.classList.add('active');
+        this.modal.setAttribute('aria-hidden', 'false');
+    }
+
+    close() {
+        this.modal.classList.remove('active');
+        this.modal.setAttribute('aria-hidden', 'true');
+    }
+
+    syncFromLocalStorage() {
+        const user = JSON.parse(localStorage.getItem('user') || '{}');
+        const avatar = document.getElementById('profileAvatar');
+        const name = document.getElementById('profileName');
+        const email = document.getElementById('profileEmail');
+        const phone = document.getElementById('profilePhone');
+        const role = document.getElementById('profileRole');
+        const created = document.getElementById('createdEventsCount');
+        const joined = document.getElementById('joinedEventsCount');
+
+        if (avatar) {
+            avatar.textContent = user.name ? user.name.charAt(0).toUpperCase() : '👤';
+        }
+        if (name) name.textContent = user.name || 'User';
+        if (email) email.textContent = user.email || '—';
+        if (phone) phone.textContent = user.phone || '—';
+        if (role) role.textContent = user.role || 'participant';
+        if (created) created.textContent = user.createdEvents || 0;
+        if (joined) joined.textContent = user.joinedEvents || 0;
+        if (this.roleSwitch) {
+            this.roleSwitch.value = user.role || 'participant';
         }
     }
 
-    async handleProfileUpdate(e) {
+    async handleRoleUpdate(e) {
         e.preventDefault();
-        const formData = new FormData(this.profileForm);
-        const profileData = {
-            name: formData.get('name'),
-            email: formData.get('email'),
-            bio: formData.get('bio'),
-            location: formData.get('location')
-        };
+        if (!this.roleSwitch) return;
+        const newRole = this.roleSwitch.value;
 
         try {
-            const response = await fetch('/api/users/profile', {
+            const response = await fetch(`${PROFILE_API_BASE}${config.ENDPOINTS.USERS.ROLE}`, {
                 method: 'PUT',
                 headers: {
                     'Authorization': `Bearer ${localStorage.getItem('token')}`,
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify(profileData)
+                body: JSON.stringify({ role: newRole })
             });
-
-            if (!response.ok) {
-                throw new Error('Failed to update profile');
-            }
-
-            const updatedUser = await response.json();
-            
-            // Update local storage with new user data
-            const currentUser = JSON.parse(localStorage.getItem('user'));
-            localStorage.setItem('user', JSON.stringify({
-                ...currentUser,
-                ...updatedUser
-            }));
-
-            // Update UI
-            this.updateUIForUser(updatedUser);
-            this.showSuccess('Profile updated successfully!');
-            this.closeProfile();
-
-        } catch (error) {
-            console.error('Error updating profile:', error);
-            this.showError('Failed to update profile. Please try again.');
-        }
-    }
-
-    async handleAvatarUpload(e) {
-        const file = e.target.files[0];
-        if (!file) return;
-
-        const formData = new FormData();
-        formData.append('avatar', file);
-
-        try {
-            const response = await fetch('/api/users/avatar', {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('token')}`
-                },
-                body: formData
-            });
-
-            if (!response.ok) {
-                throw new Error('Failed to upload avatar');
-            }
 
             const data = await response.json();
-            
-            // Update avatar preview
-            const avatarPreview = this.profileForm.querySelector('.avatar-preview');
-            avatarPreview.style.backgroundImage = `url(${data.avatarUrl})`;
 
-            // Update local storage
-            const currentUser = JSON.parse(localStorage.getItem('user'));
-            localStorage.setItem('user', JSON.stringify({
-                ...currentUser,
-                avatar: data.avatarUrl
-            }));
+            if (!response.ok) {
+                throw new Error(data.message || 'Failed to update role');
+            }
 
-            this.showSuccess('Avatar updated successfully!');
+            const user = JSON.parse(localStorage.getItem('user') || '{}');
+            const updatedUser = { ...user, role: newRole };
+            localStorage.setItem('user', JSON.stringify(updatedUser));
 
+            if (window.auth) {
+                window.auth.updateUIForLoggedInUser(updatedUser);
+            } else {
+                this.syncFromLocalStorage();
+            }
+
+            this.showToast('Role updated successfully!', 'success');
         } catch (error) {
-            console.error('Error uploading avatar:', error);
-            this.showError('Failed to upload avatar. Please try again.');
+            console.error('Failed to update role', error);
+            this.showToast(error.message || 'Unable to update role.', 'error');
         }
     }
 
-    updateUIForUser(user) {
-        // Update user menu
-        const userMenu = document.querySelector('.user-menu');
-        const userName = userMenu.querySelector('.user-name');
-        userName.textContent = user.name;
+    showToast(message, type = 'info') {
+        const container = this.toastContainer || document.getElementById('toastContainer');
+        if (!container) return;
 
-        // Update avatar if exists
-        const avatar = userMenu.querySelector('.user-avatar');
-        if (user.avatar) {
-            avatar.style.backgroundImage = `url(${user.avatar})`;
-        }
-    }
-
-    showSuccess(message) {
-        const notification = document.createElement('div');
-        notification.className = 'success-notification';
-        notification.textContent = message;
-        document.body.appendChild(notification);
+        const toast = document.createElement('div');
+        toast.className = `toast toast--${type}`;
+        toast.textContent = message;
+        container.appendChild(toast);
 
         setTimeout(() => {
-            notification.remove();
-        }, 3000);
-    }
-
-    showError(message) {
-        const notification = document.createElement('div');
-        notification.className = 'error-notification';
-        notification.textContent = message;
-        document.body.appendChild(notification);
-
-        setTimeout(() => {
-            notification.remove();
+            toast.classList.add('hide');
+            setTimeout(() => toast.remove(), 200);
         }, 3000);
     }
 }
 
-// Initialize profile when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
     window.profile = new Profile();
-}); 
+});

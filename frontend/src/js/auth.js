@@ -1,3 +1,5 @@
+const AUTH_API_BASE = (window.config && window.config.API_URL) || '';
+
 class Auth {
     constructor() {
         this.loginForm = document.getElementById('loginFormElement');
@@ -8,13 +10,18 @@ class Auth {
         this.resendCodeLink = document.getElementById('resendCode');
         this.authOverlay = document.getElementById('authOverlay');
         this.appContainer = document.getElementById('appContainer');
-        
+        this.logoutButton = document.getElementById('logoutBtn');
+
         this.initializeEventListeners();
+        this.bindGlobalActions();
         this.checkAuthStatus();
     }
 
+    buildUrl(endpoint) {
+        return `${AUTH_API_BASE}${endpoint}`;
+    }
+
     initializeEventListeners() {
-        // Form submission handlers
         if (this.loginForm) {
             this.loginForm.addEventListener('submit', (e) => this.handleLogin(e));
         }
@@ -25,7 +32,6 @@ class Auth {
             this.verifyPhoneForm.addEventListener('submit', (e) => this.handlePhoneVerification(e));
         }
 
-        // Form switching handlers
         if (this.loginLink) {
             this.loginLink.addEventListener('click', (e) => this.switchForm(e, 'login'));
         }
@@ -37,13 +43,19 @@ class Auth {
         }
     }
 
+    bindGlobalActions() {
+        if (this.logoutButton) {
+            this.logoutButton.addEventListener('click', () => this.logout());
+        }
+    }
+
     async handleLogin(e) {
         e.preventDefault();
         const email = document.getElementById('loginEmail').value;
         const password = document.getElementById('loginPassword').value;
-        
+
         try {
-            const response = await fetch('/api/auth/login', {
+            const response = await fetch(this.buildUrl(config.ENDPOINTS.AUTH.LOGIN), {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
@@ -57,17 +69,7 @@ class Auth {
                 throw new Error(data.message || 'Login failed');
             }
 
-            // Store token and user data
-            localStorage.setItem('token', data.token);
-            localStorage.setItem('user', JSON.stringify(data.user));
-
-            // Hide auth overlay and show app
-            this.authOverlay.style.display = 'none';
-            this.appContainer.style.display = 'block';
-
-            // Update UI for logged-in user
-            this.updateUIForLoggedInUser(data.user);
-
+            this.persistSession(data);
         } catch (error) {
             this.showError(this.loginForm, error.message);
         }
@@ -77,21 +79,18 @@ class Auth {
         e.preventDefault();
         const name = document.getElementById('registerName').value;
         const email = document.getElementById('registerEmail').value;
+        const phone = document.getElementById('registerPhone').value;
         const password = document.getElementById('registerPassword').value;
 
         try {
-            console.log('Sending registration request...', { name, email });
-            
-            const response = await fetch('/api/auth/register', {
+            const response = await fetch(this.buildUrl(config.ENDPOINTS.AUTH.REGISTER), {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({ name, email, password })
+                body: JSON.stringify({ name, email, phone, password })
             });
 
-            console.log('Response status:', response.status);
-            
             if (!response.ok) {
                 const errorData = await response.json();
                 throw new Error(errorData.error || 'Registration failed');
@@ -99,17 +98,14 @@ class Auth {
 
             const data = await response.json();
 
-            // Store token and user data
-            localStorage.setItem('token', data.token);
-            localStorage.setItem('user', JSON.stringify(data.user));
+            if (data.requiresVerification) {
+                localStorage.setItem('tempUser', JSON.stringify(data.user));
+                this.switchForm(null, 'verifyPhone');
+                this.showSuccess(this.verifyPhoneForm, 'Enter the code we just sent to verify your phone.');
+                return;
+            }
 
-            // Hide auth overlay and show app
-            this.authOverlay.style.display = 'none';
-            this.appContainer.style.display = 'block';
-
-            // Update UI for logged-in user
-            this.updateUIForLoggedInUser(data.user);
-
+            this.persistSession(data);
         } catch (error) {
             console.error('Registration error:', error);
             this.showError(this.registerForm, error.message || 'Registration failed. Please try again.');
@@ -119,17 +115,22 @@ class Auth {
     async handlePhoneVerification(e) {
         e.preventDefault();
         const code = document.getElementById('verificationCode').value;
-        const tempUser = JSON.parse(localStorage.getItem('tempUser'));
+        const tempUser = JSON.parse(localStorage.getItem('tempUser') || '{}');
+
+        if (!tempUser._id) {
+            this.showError(this.verifyPhoneForm, 'Something went wrong. Please restart the sign-up flow.');
+            return;
+        }
 
         try {
-            const response = await fetch('/api/auth/verify-phone', {
+            const response = await fetch(this.buildUrl(config.ENDPOINTS.AUTH.VERIFY_PHONE), {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({ 
                     userId: tempUser._id,
-                    code: code 
+                    code 
                 })
             });
 
@@ -139,18 +140,8 @@ class Auth {
                 throw new Error(data.message || 'Verification failed');
             }
 
-            // Store token and user data
-            localStorage.setItem('token', data.token);
-            localStorage.setItem('user', JSON.stringify(data.user));
             localStorage.removeItem('tempUser');
-
-            // Hide auth overlay and show app
-            this.authOverlay.style.display = 'none';
-            this.appContainer.style.display = 'block';
-
-            // Update UI for logged-in user
-            this.updateUIForLoggedInUser(data.user);
-
+            this.persistSession(data);
         } catch (error) {
             this.showError(this.verifyPhoneForm, error.message);
         }
@@ -158,10 +149,15 @@ class Auth {
 
     async handleResendCode(e) {
         e.preventDefault();
-        const tempUser = JSON.parse(localStorage.getItem('tempUser'));
+        const tempUser = JSON.parse(localStorage.getItem('tempUser') || '{}');
+
+        if (!tempUser._id) {
+            this.showError(this.verifyPhoneForm, 'No pending verification found.');
+            return;
+        }
 
         try {
-            const response = await fetch('/api/auth/resend-code', {
+            const response = await fetch(this.buildUrl(config.ENDPOINTS.AUTH.RESEND_CODE), {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
@@ -176,75 +172,53 @@ class Auth {
             }
 
             this.showSuccess(this.verifyPhoneForm, 'Verification code resent successfully!');
-
         } catch (error) {
             this.showError(this.verifyPhoneForm, error.message);
         }
     }
 
-    async handleRoleSwitch(e) {
-        e.preventDefault();
-        const newRole = document.getElementById('roleSwitch').value;
-        const user = JSON.parse(localStorage.getItem('user'));
-
-        try {
-            const response = await fetch('/api/users/role', {
-                method: 'PUT',
-                headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('token')}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ role: newRole })
-            });
-
-            const data = await response.json();
-
-            if (!response.ok) {
-                throw new Error(data.message || 'Failed to update role');
-            }
-
-            // Update local storage
-            user.role = newRole;
-            localStorage.setItem('user', JSON.stringify(user));
-
-            // Update UI
-            this.updateUIForLoggedInUser(user);
-            this.showSuccess(null, 'Role updated successfully!');
-
-        } catch (error) {
-            this.showError(null, error.message);
-        }
-    }
-
     switchForm(e, formType) {
-        e.preventDefault();
-        
-        // Hide all forms
-        document.getElementById('loginForm').classList.add('hidden');
-        document.getElementById('registerForm').classList.add('hidden');
-        document.getElementById('verifyPhoneForm').classList.add('hidden');
-        
-        // Show selected form
-        document.getElementById(`${formType}Form`).classList.remove('hidden');
+        if (e) {
+            e.preventDefault();
+        }
+
+        const forms = {
+            login: document.getElementById('loginForm'),
+            register: document.getElementById('registerForm'),
+            verifyPhone: document.getElementById('verifyPhoneForm')
+        };
+
+        Object.values(forms).forEach(form => {
+            if (form) {
+                form.classList.add('hidden');
+            }
+        });
+
+        const target = forms[formType];
+        if (target) {
+            target.classList.remove('hidden');
+        }
     }
 
     showError(form, message) {
-        // Create error message element if it doesn't exist
-        let errorElement = form ? form.querySelector('.error-message') : document.querySelector('.error-message');
+        const target = form || this.authOverlay || document.body;
+        let errorElement = target.querySelector ? target.querySelector('.error-message') : null;
+
         if (!errorElement) {
             errorElement = document.createElement('div');
             errorElement.className = 'error-message';
-            if (form) {
+            if (form && form.firstChild) {
                 form.insertBefore(errorElement, form.firstChild);
-            } else {
-                document.body.appendChild(errorElement);
+            } else if (form) {
+                form.appendChild(errorElement);
+            } else if (target.appendChild) {
+                target.appendChild(errorElement);
             }
         }
-        
+
         errorElement.textContent = message;
         errorElement.classList.add('show');
-        
-        // Hide error after 5 seconds
+
         setTimeout(() => {
             errorElement.classList.remove('show');
         }, 5000);
@@ -254,64 +228,100 @@ class Auth {
         const successElement = document.createElement('div');
         successElement.className = 'success-message';
         successElement.textContent = message;
-        
-        if (form) {
+
+        if (form && form.firstChild) {
             form.insertBefore(successElement, form.firstChild);
+        } else if (form) {
+            form.appendChild(successElement);
         } else {
             document.body.appendChild(successElement);
         }
-        
-        // Hide success message after 3 seconds
+
         setTimeout(() => {
             successElement.remove();
         }, 3000);
     }
 
     updateUIForLoggedInUser(user) {
-        // Update profile information
-        document.getElementById('profileName').textContent = user.name;
-        document.getElementById('profileEmail').textContent = user.email;
-        document.getElementById('profilePhone').textContent = user.phone;
-        document.getElementById('profileRole').textContent = user.role;
+        if (!user) return;
 
-        // Update role switch dropdown
+        const nameEl = document.getElementById('profileName');
+        const emailEl = document.getElementById('profileEmail');
+        const phoneEl = document.getElementById('profilePhone');
+        const roleEl = document.getElementById('profileRole');
+
+        if (nameEl) nameEl.textContent = user.name || 'Unknown user';
+        if (emailEl) emailEl.textContent = user.email || '—';
+        if (phoneEl) phoneEl.textContent = user.phone || '—';
+        if (roleEl) roleEl.textContent = user.role || 'participant';
+
         const roleSwitch = document.getElementById('roleSwitch');
         if (roleSwitch) {
-            roleSwitch.value = user.role;
+            roleSwitch.value = user.role || 'participant';
         }
 
-        // Show/hide elements based on user role
         const organizerElements = document.querySelectorAll('.organizer-only');
         organizerElements.forEach(element => {
             element.style.display = user.role === 'organizer' ? 'block' : 'none';
         });
+
+        const createdEventsCount = document.getElementById('createdEventsCount');
+        const joinedEventsCount = document.getElementById('joinedEventsCount');
+        if (createdEventsCount) {
+            createdEventsCount.textContent = user.createdEvents || 0;
+        }
+        if (joinedEventsCount) {
+            joinedEventsCount.textContent = user.joinedEvents || 0;
+        }
+    }
+
+    persistSession(data) {
+        if (!data || !data.token || !data.user) {
+            throw new Error('Invalid session response');
+        }
+        localStorage.setItem('token', data.token);
+        localStorage.setItem('user', JSON.stringify(data.user));
+        this.toggleAppVisibility(true);
+        this.updateUIForLoggedInUser(data.user);
+        if (window.eventSwipe && typeof window.eventSwipe.loadEvents === 'function') {
+            window.eventSwipe.loadEvents();
+        }
     }
 
     checkAuthStatus() {
         const token = localStorage.getItem('token');
-        const user = JSON.parse(localStorage.getItem('user'));
+        const user = JSON.parse(localStorage.getItem('user') || 'null');
 
         if (token && user) {
-            // User is logged in
-            this.authOverlay.style.display = 'none';
-            this.appContainer.style.display = 'block';
+            this.toggleAppVisibility(true);
             this.updateUIForLoggedInUser(user);
         } else {
-            // User is not logged in
-            this.authOverlay.style.display = 'flex';
-            this.appContainer.style.display = 'none';
+            this.toggleAppVisibility(false);
         }
     }
 
     logout() {
         localStorage.removeItem('token');
         localStorage.removeItem('user');
-        this.authOverlay.style.display = 'flex';
-        this.appContainer.style.display = 'none';
+        this.toggleAppVisibility(false);
+        this.switchForm(null, 'login');
+        if (window.eventSwipe) {
+            window.eventSwipe.events = [];
+            window.eventSwipe.currentIndex = 0;
+            window.eventSwipe.showEmptyState('Login required', 'Sign in to continue.');
+        }
+    }
+
+    toggleAppVisibility(isLoggedIn) {
+        if (this.authOverlay) {
+            this.authOverlay.style.display = isLoggedIn ? 'none' : 'flex';
+        }
+        if (this.appContainer) {
+            this.appContainer.style.display = isLoggedIn ? 'block' : 'none';
+        }
     }
 }
 
-// Initialize auth when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
     window.auth = new Auth();
-}); 
+});
